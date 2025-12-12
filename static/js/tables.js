@@ -2336,8 +2336,8 @@ define(['cartutils','filterutils','tippy','jquery', 'base'], function(cartutils,
     // Auto-expand studies table if there's exactly one study
     const autoExpandStudiesForUIDFilter = function(caseId) {
         let filters = filterutils.parseFilterObj();
-        // Only continue if we have series UID filter
-        if (!filters.hasOwnProperty('SeriesInstanceUID')) {
+        // Continue if we have series or study UID filter (expand to show series)
+        if (!filters.hasOwnProperty('SeriesInstanceUID') && !filters.hasOwnProperty('StudyInstanceUID')) {
             return;
         }
 
