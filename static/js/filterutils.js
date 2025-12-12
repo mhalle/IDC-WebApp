@@ -113,8 +113,8 @@ define(['jquery', 'base'], function($, base) {
                 }
             }
             url += encoded_filters.join("&");
-            url.length > 2048 && $('.url-too-long').show();
-            url.length <= 2048 && $('.url-too-long').hide();
+            url.length > 16384 && $('.url-too-long').show();
+            url.length <= 16384 && $('.url-too-long').hide();
             $('.filter-url').html(url);
             $('.copy-url').attr("content",url);
 
