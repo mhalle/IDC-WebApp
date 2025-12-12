@@ -2245,9 +2245,132 @@ define(['cartutils','filterutils','tippy','jquery', 'base'], function(cartutils,
         let newId = id.slice(0, 8) + '...' + id.slice(id.length - 8, id.length);
         return newId;
     }
+
+    // Check if the current filter contains UID-based filters that warrant auto-expansion
+    const hasUIDFilter = function() {
+        let filters = filterutils.parseFilterObj();
+        return filters.hasOwnProperty('SeriesInstanceUID') ||
+               filters.hasOwnProperty('StudyInstanceUID') ||
+               filters.hasOwnProperty('PatientID');
+    };
+
+    // Auto-expand tables when a UID filter is set, drilling down to show the filtered item
+    // This function is called after filters are loaded from URL and tables are populated
+    window.autoExpandTablesForUIDFilter = function() {
+        if (!hasUIDFilter()) {
+            return;
+        }
+
+        // Get visible collections from the project table
+        let projTable = $('#proj_table').DataTable();
+        let visibleRows = projTable.rows().data();
+
+        if (visibleRows.length === 0) {
+            return;
+        }
+
+        // If there's exactly one collection with results, auto-expand it
+        if (visibleRows.length === 1) {
+            let projId = visibleRows[0][0];
+            let projRow = $('#project_row_' + projId);
+
+            if (projRow.length > 0 && !projRow.hasClass('open')) {
+                // Set the open state
+                window.openProjects[projId] = 1;
+                projRow.addClass('open');
+                projRow.find('.expansion-toggle .fa-folder').addClass('is-hidden');
+                projRow.find('.expansion-toggle .fa-folder-open').removeClass('is-hidden');
+                projRow.find('.viewbx').addClass('open');
+
+                // Update case table and chain to auto-expand cases/studies
+                let caseID = $('#caseID-search-box').length > 0 ? $('#caseID-search-box').val() : "";
+                updateCaseTable(true, caseID, caseID !== "");
+
+                // After cases table is drawn, check if we should auto-expand further
+                $('#cases_tab').one('draw.dt', function() {
+                    autoExpandCasesForUIDFilter(projId);
+                });
+            }
+        }
+    };
+
+    // Auto-expand cases table if there's exactly one case
+    const autoExpandCasesForUIDFilter = function(projId) {
+        let filters = filterutils.parseFilterObj();
+        // Only continue if we have study or series UID filter
+        if (!filters.hasOwnProperty('SeriesInstanceUID') && !filters.hasOwnProperty('StudyInstanceUID')) {
+            return;
+        }
+
+        let casesTable = $('#cases_tab').DataTable();
+        let visibleCases = casesTable.rows().data();
+
+        if (visibleCases.length === 1) {
+            let caseData = visibleCases[0];
+            let caseId = caseData['PatientID'];
+            let caseRow = $('#case_' + caseId);
+
+            if (caseRow.length > 0 && !caseRow.hasClass('open')) {
+                // Set the open state
+                if (!(projId in window.openCases)) {
+                    window.openCases[projId] = {};
+                }
+                window.openCases[projId][caseId] = 1;
+                caseRow.addClass('open');
+                caseRow.find('.expansion-toggle .fa-folder').addClass('is-hidden');
+                caseRow.find('.expansion-toggle .fa-folder-open').removeClass('is-hidden');
+                caseRow.find('.viewbx').addClass('open');
+
+                // Update study table
+                let studyID = $('#studyID-search-box').length > 0 ? $('#studyID-search-box').val() : "";
+                updateStudyTable(true, studyID, studyID !== "");
+
+                // After studies table is drawn, check if we should auto-expand further
+                $('#studies_tab').one('draw.dt', function() {
+                    autoExpandStudiesForUIDFilter(caseId);
+                });
+            }
+        }
+    };
+
+    // Auto-expand studies table if there's exactly one study
+    const autoExpandStudiesForUIDFilter = function(caseId) {
+        let filters = filterutils.parseFilterObj();
+        // Only continue if we have series UID filter
+        if (!filters.hasOwnProperty('SeriesInstanceUID')) {
+            return;
+        }
+
+        let studiesTable = $('#studies_tab').DataTable();
+        let visibleStudies = studiesTable.rows().data();
+
+        if (visibleStudies.length === 1) {
+            let studyData = visibleStudies[0];
+            let studyId = studyData['StudyInstanceUID'];
+            let studyRow = $('#study_' + studyId);
+
+            if (studyRow.length > 0 && !studyRow.hasClass('open')) {
+                // Set the open state
+                if (!(caseId in window.openStudies)) {
+                    window.openStudies[caseId] = {};
+                }
+                window.openStudies[caseId][studyId] = 1;
+                studyRow.addClass('open');
+                studyRow.find('.expansion-toggle .fa-folder').addClass('is-hidden');
+                studyRow.find('.expansion-toggle .fa-folder-open').removeClass('is-hidden');
+                studyRow.find('.viewbx').addClass('open');
+
+                // Update series table to show the filtered series
+                let seriesID = $('#seriesID-search-box').length > 0 ? $('#seriesID-search-box').val() : "";
+                updateSeriesTable(true, seriesID, seriesID !== "");
+            }
+        }
+    };
+
     return {
         initializeTableCacheData: initializeTableCacheData,
         initializeTableViewedItemsData: initializeTableViewedItemsData,
-        propagateCartTableStatChanges:propagateCartTableStatChanges
+        propagateCartTableStatChanges:propagateCartTableStatChanges,
+        autoExpandTablesForUIDFilter: window.autoExpandTablesForUIDFilter
     };
 });

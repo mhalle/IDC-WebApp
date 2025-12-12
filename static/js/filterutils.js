@@ -234,6 +234,13 @@ define(['jquery', 'base'], function($, base) {
                      loadPending = load_filters(filters_for_load, );
                      loadPending.then(function () {
                          //console.debug("External filter load done.");
+                         // Auto-expand tables if UID filter is present (e.g., SeriesInstanceUID from URL)
+                         if (typeof window.autoExpandTablesForUIDFilter === 'function') {
+                             // Wait for tables to be populated before auto-expanding
+                             setTimeout(function() {
+                                 window.autoExpandTablesForUIDFilter();
+                             }, 100);
+                         }
                      });
                  }
              } else {
