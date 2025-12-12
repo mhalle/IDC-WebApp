@@ -61,6 +61,8 @@ define(['jquery', 'base'], function($, base) {
     var ANONYMOUS_FILTERS = {};
     var showFilters = [];
     var first_filter_load = true;
+    var is_handling_popstate = false;  // Flag to prevent pushState during popstate handling
+    var last_pushed_url = null;  // Track last pushed URL to avoid duplicates
 
     const update_filter_controls = function() {
         let filters = parseFilterObj();
@@ -115,6 +117,21 @@ define(['jquery', 'base'], function($, base) {
             url.length <= 2048 && $('.url-too-long').hide();
             $('.filter-url').html(url);
             $('.copy-url').attr("content",url);
+
+            // Update browser URL with current filter state (pushState)
+            if (!is_handling_popstate && !first_filter_load && url !== last_pushed_url) {
+                last_pushed_url = url;
+                window.history.pushState({ filters: filters }, '', url);
+            }
+        } else {
+            // No filters - update URL to base explore page
+            if (!is_handling_popstate && !first_filter_load) {
+                let base_url = window.location.origin + "/explore/";
+                if (last_pushed_url !== base_url) {
+                    last_pushed_url = base_url;
+                    window.history.pushState({ filters: {} }, '', base_url);
+                }
+            }
         }
     };
 
@@ -662,13 +679,10 @@ define(['jquery', 'base'], function($, base) {
         if (mkFilt) {
             isFiltered = mkFiltText();
             update_filter_controls();
-          if (window.location.href.search(/\/filters\//g) >= 0) {
-             if (!first_filter_load) {
-                window.history.pushState({}, '', window.location.origin + "/explore/")
-            } else {
+            // Mark first filter load complete (pushState is now handled in update_filter_controls)
+            if (first_filter_load) {
                 first_filter_load = false;
             }
-          }
         }
 
         if (doUpdate){
@@ -1196,6 +1210,94 @@ define(['jquery', 'base'], function($, base) {
         }
 
     }
+
+    // Handle browser back/forward navigation (popstate)
+    // Restores filter state from the URL when user navigates history
+    window.addEventListener('popstate', function(event) {
+        is_handling_popstate = true;
+
+        // Clear current filters
+        window.filterObj = {};
+        $('input:checkbox').not('.hide-zeros').not('.tbl-sel').prop('checked', false);
+        $('input:checkbox').not('.hide-zeros').not('.tbl-sel').prop('indeterminate', false);
+        $('.ui-slider').each(function() {
+            setSlider(this.id, true, 0, 0, true, false);
+        });
+
+        // Check if we have filter state in the history event
+        if (event.state && event.state.filters && Object.keys(event.state.filters).length > 0) {
+            // Restore filters from state - need to convert to the format load_filters expects
+            // The state.filters is in parseFilterObj format, need to look up attribute IDs
+            restoreFiltersFromState(event.state.filters);
+        } else {
+            // No filters - parse URL to check for filter parameters
+            let urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.toString().length > 0) {
+                // URL has parameters, reload the page to let server parse them
+                window.location.reload();
+            } else {
+                // No filters, just update the UI
+                mkFiltText();
+                update_filter_controls();
+                updateFacetsData(true).then(function(ret) {
+                    var collFilt = ret[0];
+                    var collectionData = ret[1];
+                    var collectionStats = ret[2];
+                    updateTablesAfterFilter(collFilt, collectionData, collectionStats, {});
+                    is_handling_popstate = false;
+                });
+            }
+        }
+    });
+
+    // Restore filters from a state object (used by popstate handler)
+    const restoreFiltersFromState = function(filters) {
+        // Get all attribute IDs for the filter names
+        let filterNames = Object.keys(filters);
+        if (filterNames.length === 0) {
+            is_handling_popstate = false;
+            return;
+        }
+
+        // Find checkboxes/sliders for each filter and set them
+        filterNames.forEach(function(filterName) {
+            let values = filters[filterName];
+            if (!Array.isArray(values)) {
+                values = values.values || [];
+            }
+
+            values.forEach(function(val) {
+                // Try to find and check the corresponding checkbox
+                let checkbox = $('input[type="checkbox"][value="' + val + '"]').filter(function() {
+                    let attrName = $(this).closest('[data-filter-attr-id]').attr('id') ||
+                                   $(this).attr('data-filter-display-attr');
+                    return attrName === filterName;
+                });
+
+                if (checkbox.length > 0) {
+                    checkbox.prop('checked', true);
+                }
+            });
+        });
+
+        // Trigger filter update
+        mkFiltText();
+        update_filter_controls();
+        updateFacetsData(true).then(function(ret) {
+            var collFilt = ret[0];
+            var collectionData = ret[1];
+            var collectionStats = ret[2];
+            updateTablesAfterFilter(collFilt, collectionData, collectionStats, {});
+            is_handling_popstate = false;
+
+            // Auto-expand if UID filter
+            if (typeof window.autoExpandTablesForUIDFilter === 'function') {
+                setTimeout(function() {
+                    window.autoExpandTablesForUIDFilter();
+                }, 100);
+            }
+        });
+    };
 
 
     return {
